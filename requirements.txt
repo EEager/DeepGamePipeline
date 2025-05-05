@@ -1,0 +1,4 @@
+pygame
+kafka-python
+flask
+pyspark
