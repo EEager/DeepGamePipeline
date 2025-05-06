@@ -1,0 +1,15 @@
+{"timestamp":"2025-05-06T03:26:44.598473","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:27:15.499802","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:28:26.556675","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:28:59.519311","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:29:24.171638","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:32:02.808325","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:32:33.699567","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:39:46.613948","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:40:16.965130","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:40:47.849805","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:44:12.080644","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:44:42.247253","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:45:12.544018","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:45:42.914578","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2025-05-06T03:46:13.210667","level":"info","event":"Filling up the DagBag from /home/jjlee/workspace/GSBE/project-root/airflow-dags/dags/test_airflow.py","logger":"airflow.models.dagbag.DagBag"}

@@ -1,1 +1,4 @@
 venv/
+.requirements.txt.swp
+airflow-dags/.run_airflow.sh.swp
+airflow-dags/airflow.db
