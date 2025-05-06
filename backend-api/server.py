@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import mysql.connector
 
 app = Flask(__name__)
@@ -21,29 +21,94 @@ connection = mysql.connector.connect(
     database="gamelogs"
 )
 
+#################################################################
+# EndPoints
+#################################################################
+
+# 헬스 체크
 @app.route("/", methods=["GET"])
 def index():
     return jsonify({"message": "Game API is running!"})
 
+# 전체 조회 + 정렬 + 필터링
 @app.route("/player_summary", methods=["GET"])
-def get_player_summary_all():
+def get_all_player_summary():
+    sort_by = request.args.get('sort_by', 'player_id')
+    order = request.args.get('order', 'asc')
+    min_move_count = request.args.get('min_move_count', None)
+
     cursor = connection.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM player_summary")
+
+    query = "SELECT * FROM player_summary"
+    conditions = []
+
+    if min_move_count:
+        conditions.append(f"move_count >= {min_move_count}")
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+
+    query += f" ORDER BY {sort_by} {order.upper()}"
+
+    cursor.execute(query)
     result = cursor.fetchall()
     cursor.close()
     return jsonify(result)
 
+# 단일 조회
 @app.route("/player_summary/<int:player_id>", methods=["GET"])
-def get_player_summary_by_id(player_id):
+def get_player_summary(player_id):
     cursor = connection.cursor(dictionary=True)
     cursor.execute("SELECT * FROM player_summary WHERE player_id = %s", (player_id,))
     result = cursor.fetchone()
     cursor.close()
+    if result:
+        return jsonify(result)
+    else:
+        return jsonify({"error": "Player not found"}), 404
 
-    if result is None:
-        abort(404, description="Player not found")
 
-    return jsonify(result)
+@app.route("/player_logs/<int:player_id>", methods=["GET"])
+def get_player_logs(player_id):
+    cursor = connection.cursor(dictionary=True)
+
+    # logs_move 조회
+    cursor.execute("SELECT x, y, created_at FROM logs_move WHERE player_id = %s", (player_id,))
+    move_logs = cursor.fetchall()
+
+    # logs_attack 조회
+    cursor.execute("SELECT target_id, damage, created_at FROM logs_attack WHERE player_id = %s", (player_id,))
+    attack_logs = cursor.fetchall()
+
+    # logs_heal 조회
+    cursor.execute("SELECT heal_amount, created_at FROM logs_heal WHERE player_id = %s", (player_id,))
+    heal_logs = cursor.fetchall()
+
+    cursor.close()
+
+    return jsonify({
+        "player_id": player_id,
+        "move_logs": move_logs,
+        "attack_logs": attack_logs,
+        "heal_logs": heal_logs
+    })
+
+@app.route("/player_ranking", methods=["GET"])
+def get_player_ranking():
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute("SELECT player_id, total_damage, total_heal FROM player_summary")
+    players = cursor.fetchall()
+    cursor.close()
+
+    # 딜 많은 순 정렬
+    top_damage = sorted(players, key=lambda x: x['total_damage'], reverse=True)[:5]
+    # 힐 많은 순 정렬
+    top_heal = sorted(players, key=lambda x: x['total_heal'], reverse=True)[:5]
+
+    return jsonify({
+        "top_damage_players": top_damage,
+        "top_heal_players": top_heal
+    })
 
 
 if __name__ == "__main__":
