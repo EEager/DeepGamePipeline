@@ -2,6 +2,8 @@ venv/
 .requirements.txt.swp
 airflow-dags/.run_airflow.sh.swp
 airflow-dags/airflow.db
+airflow-dags/logs/
+
 *.pyc
 backend-django/config/
 backend-spring/backend/
