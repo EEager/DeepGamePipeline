@@ -11,3 +11,6 @@ apache-airflow
 flask-appbuilder
 passlib #python -c "from passlib.hash import pbkdf2_sha256; print(pbkdf2_sha256.hash('your_secure_password'))"
 
+# django
+django
+
