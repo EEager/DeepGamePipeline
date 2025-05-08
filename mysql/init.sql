@@ -1,5 +1,9 @@
 CREATE DATABASE IF NOT EXISTS gamelogs;
+-- 데이터베이스를 생성하고 명시적으로 연결
+ALTER DATABASE gamelogs CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- 다시 데이터베이스 지정
 USE gamelogs;
+
 
 CREATE TABLE IF NOT EXISTS logs_attack (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
