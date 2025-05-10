@@ -106,3 +106,7 @@ spark-submit --version
 ➡ 여기까지 하면 준비 완료!
 
 
+------------------------------------------
+# DW 용 postgreSQL 설치
+sudo apt update
+sudo apt install postgresql postgresql-contrib

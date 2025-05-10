@@ -5,7 +5,7 @@ import json
 from kafka import KafkaProducer
 from typing import Optional, Dict, Any
 
-from config import KAFKA_BOOTSTRAP_SERVERS, KAFKA_TOPIC
+from config.settings import KAFKA_BOOTSTRAP_SERVERS, KAFKA_TOPIC
 
 
 class KafkaLogger:

@@ -8,6 +8,7 @@ from objects.base_object import BaseObject
 from objects.bullet import Bullet
 from config.settings import SCREEN_WIDTH, SCREEN_HEIGHT, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SPEED, PLAYER_MAX_HEALTH, PLAYER_MAX_BULLETS, PLAYER_RELOAD_TIME, PLAYER_BULLET_SPEED
 from objects.bullet_pool import BulletPool
+from utils.kafka_logger import KafkaLogger
 
 class Player(BaseObject):
     """플레이어 캐릭터"""
