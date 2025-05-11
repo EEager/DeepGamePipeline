@@ -6,12 +6,8 @@ from pygame.math import Vector2
 from typing import Optional
 
 class BaseObject(ABC):
-    def __init__(self, position):
-        # Vector2 타입이면 항상 복사해서 저장
-        if isinstance(position, Vector2):
-            self.position = position.copy()
-        else:
-            self.position = position
+    def __init__(self, position=(0, 0)):
+        self.position = Vector2(position)
         self.active = True
         self.object_type: str = "base"  # "player", "boss", "bullet", "heal_item" 등
 

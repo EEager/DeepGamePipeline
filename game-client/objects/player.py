@@ -8,19 +8,19 @@ from objects.base_object import BaseObject
 from objects.bullet import Bullet
 from config.settings import SCREEN_WIDTH, SCREEN_HEIGHT, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SPEED, PLAYER_MAX_HEALTH, PLAYER_MAX_BULLETS, PLAYER_RELOAD_TIME, PLAYER_BULLET_SPEED
 from objects.bullet_pool import BulletPool
-from utils.kafka_logger import KafkaLogger
+from objects.base_player import BasePlayer
 
-class Player(BaseObject):
+class Player(BasePlayer):
     """플레이어 캐릭터"""
-    def __init__(self, position: Vector2) -> None:
-        super().__init__(position)
+    def __init__(self, user, color, position=(0, 0), bullet_color=(255,255,0)):
+        super().__init__(user, color, position)
         self.object_type = "player"
         self.width = PLAYER_WIDTH
         self.height = PLAYER_HEIGHT
         self.speed = PLAYER_SPEED
-        self.health = PLAYER_MAX_HEALTH
         self.max_health = PLAYER_MAX_HEALTH
-        self.color = (0, 0, 255)
+        self.health = PLAYER_MAX_HEALTH
+        self.color = color
         self.image: Optional[pygame.Surface] = None
 
         self.bullets: List[Vector2] = []
@@ -40,11 +40,11 @@ class Player(BaseObject):
         self.reload_bar_width = 40
         self.reload_bar_height = 5
         self.keys: Optional[pygame.key.ScancodeWrapper] = None
+        self.bullet_color = bullet_color
 
         # 총알 아이콘 생성
-        self.bullet_icon = pygame.Surface((8, 8))
-        self.bullet_icon.fill((0, 0, 0))
-        pygame.draw.circle(self.bullet_icon, (255, 255, 0), (4, 4), 3)
+        self.bullet_icon = pygame.Surface((8, 8), pygame.SRCALPHA)
+        pygame.draw.circle(self.bullet_icon, self.bullet_color, (4, 4), 3)
 
         self.hit_effect_timer = 0
         self.hit_effect_duration = 0.2
@@ -91,7 +91,7 @@ class Player(BaseObject):
                     (self.position + Vector2(self.width//2, self.height//2)).copy(),
                     direction,
                     PLAYER_BULLET_SPEED,
-                    (0,0,255),
+                    self.color,
                     "player",
                     1
                 )
@@ -117,36 +117,45 @@ class Player(BaseObject):
                 self.hit_effect_timer = 0
 
     def render(self, screen: pygame.Surface) -> None:
-        # 피격 시 색상 변경
         color = (100, 200, 255) if self.hit_effect_timer > 0 else self.color
-        pygame.draw.rect(screen, color, (self.position.x, self.position.y, self.width, self.height))
-
-        # 체력바 (플레이어 아래)
-        bar_width = 40
+        center = (int(self.position.x + self.width // 2), int(self.position.y + self.height // 2))
+        radius = self.width // 2
+        
+        # 플레이어 원
+        pygame.draw.circle(screen, color, center, radius)
+        # 닉네임 표시 (원 위)
+        name_surf = pygame.font.Font(None, 18).render(self.user, True, color)
+        screen.blit(name_surf, (center[0] - name_surf.get_width() // 2, self.position.y - 24))
+        
+        # 체력바/장전바 공통 길이
+        bar_width = int(self.width * 0.8)
         bar_height = 5
-        bar_x = self.position.x + (self.width - bar_width) / 2
-        bar_y = self.position.y + self.height + 5
-        health_ratio = self.health / self.max_health
+        bar_x = center[0] - bar_width // 2
+        bar_y = self.position.y + self.height + 7
+        health_ratio = float(self.health) / float(self.max_health)
+        
+        # 체력바
         pygame.draw.rect(screen, (200, 200, 200), (bar_x, bar_y, bar_width, bar_height))
-        pygame.draw.rect(screen, (0, 255, 0), (bar_x, bar_y, bar_width * health_ratio, bar_height))
-
-        # 총알 표시 (플레이어 위)
-        bullet_y = self.position.y - 20
-        for i in range(self.max_bullets):
-            bullet_x = self.position.x + (self.width - (self.max_bullets * 12)) / 2 + (i * 12)
-            if i < self.current_bullets:
-                screen.blit(self.bullet_icon, (bullet_x, bullet_y))
-            else:
-                pygame.draw.circle(screen, (100, 100, 100), (bullet_x + 4, bullet_y + 4), 3)
-
-        # 장전 중일 때만 장전바 표시
+        bar_fill = bar_width * health_ratio
+        pygame.draw.rect(screen, (0, 255, 0), (bar_x, bar_y, bar_fill, bar_height))
+        
+        # 총알 표시 (체력바 아래)
+        bullet_y = bar_y + bar_height + 3
+        bullet_spacing = 12
+        total_bullet_width = bullet_spacing * self.max_bullets
+        start_x = center[0] - total_bullet_width // 2
+        for i in range(self.current_bullets):
+            bullet_x = start_x + i * bullet_spacing
+            screen.blit(self.bullet_icon, (bullet_x, bullet_y))
+        # 장전바 (체력바와 동일한 길이, 체력바 아래)
         if self.is_reloading:
             now = pygame.time.get_ticks()
             elapsed = min((now - self.last_shot_time) / self.reload_time, 1.0)
             bar_fill = bar_width * elapsed
-            reload_bar_y = bar_y + bar_height + 2
+            reload_bar_y = bullet_y
             pygame.draw.rect(screen, (200, 200, 200), (bar_x, reload_bar_y, bar_width, bar_height))
             pygame.draw.rect(screen, (0, 128, 255), (bar_x, reload_bar_y, bar_fill, bar_height))
+            print(f"bar_width: {bar_width}, bar_height: {bar_height}")
 
     def get_rect(self) -> pygame.Rect:
         return pygame.Rect(self.position.x, self.position.y, self.width, self.height)
@@ -169,10 +178,12 @@ class Player(BaseObject):
             self.position,
             Vector2(0, -1),  # 위로 발사
             PLAYER_BULLET_SPEED,
-            BLUE,
+            self.color,
             "player"
         )
         
         if bullet:  # 총알을 성공적으로 가져왔다면
             self.last_shot_time = time.time()
             self.can_shoot = False
+
+    # 필요시 게임 전용 메서드 추가

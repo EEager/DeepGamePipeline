@@ -14,6 +14,7 @@ import os
 from objects.bullet_pool import BulletPool
 import math
 from objects.spatial_hash_grid import SpatialHashGrid
+from utils.font import get_font
 
 GRID_SIZE = 100  # 격자 셀 크기
 
@@ -21,17 +22,22 @@ def get_grid_cell(pos):
     return (int(pos.x) // GRID_SIZE, int(pos.y) // GRID_SIZE)
 
 class GameScene(BaseScene):
-    def __init__(self):
+    def __init__(self, user=None, color=None, bullet_color=None):
         super().__init__()
         self.object_manager = ObjectManager.get_instance()
         self.bullet_pool = BulletPool()
         
         # 폰트 설정
-        self.font_path = os.path.join(os.path.dirname(__file__), "..", "assets", "fonts", "D2Coding.ttf")
-        self.font = pygame.font.Font(self.font_path, 36)
+        self.font = get_font(36)
         
         # 플레이어 생성 및 추가
-        player = Player(Vector2(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 100))
+        if user is None:
+            user = "player"
+        if color is None:
+            color = (0,0,255)
+        if bullet_color is None:
+            bullet_color = color
+        player = Player(user, color, Vector2(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 100), bullet_color)
         self.object_manager.add_object(player, "player")
         
         # 보스 생성 및 추가
@@ -58,6 +64,7 @@ class GameScene(BaseScene):
         self.create_blur_surface()
 
     def on_enter(self):
+        print("Entering Game Scene")
         pygame.mouse.set_visible(False)
 
     def on_exit(self) -> None:
@@ -119,7 +126,7 @@ class GameScene(BaseScene):
         screen.fill((255, 255, 255))  # 배경 흰색
         
         # FPS 표시
-        font = pygame.font.Font(self.font_path, 24)
+        font = get_font(24)
         fps_text = font.render(f"FPS: {fps}", True, (0, 0, 0))
         screen.blit(fps_text, (10, 10))
         

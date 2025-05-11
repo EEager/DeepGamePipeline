@@ -14,3 +14,8 @@ passlib #python -c "from passlib.hash import pbkdf2_sha256; print(pbkdf2_sha256.
 # django
 django
 
+# websocket
+websocket
+websocket-client
+pygame_textinput
+
