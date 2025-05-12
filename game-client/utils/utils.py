@@ -16,6 +16,10 @@ def lerp(a: float, b: float, t: float) -> float:
     """
     return a + (b - a) * t
 
+def lerp_pos(pos0: tuple[float, float], pos1: tuple[float, float], t: float) -> tuple[float, float]:
+    """2D 위치 보간"""
+    return (lerp(pos0[0], pos1[0], t), lerp(pos0[1], pos1[1], t))
+
 def distance(p1: tuple[float, float], p2: tuple[float, float]) -> float:
     """
     두 점 (x1, y1), (x2, y2) 간의 유클리드 거리

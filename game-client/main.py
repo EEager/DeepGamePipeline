@@ -1,9 +1,15 @@
 import pygame
 import sys
+import os
+import logging
 from scenes.scene_manager import SceneManager
 from scenes.game_scene import GameScene
 from scenes.main_scene import MainScene
 from config.settings import SCREEN_WIDTH, SCREEN_HEIGHT
+
+# 개발/운영 환경별 로그 레벨 분기
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, log_level), format='[%(levelname)s] %(asctime)s %(name)s: %(message)s')
 
 def main() -> None:
     pygame.init()

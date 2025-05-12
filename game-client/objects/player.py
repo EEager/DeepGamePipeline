@@ -155,9 +155,8 @@ class Player(BasePlayer):
             reload_bar_y = bullet_y
             pygame.draw.rect(screen, (200, 200, 200), (bar_x, reload_bar_y, bar_width, bar_height))
             pygame.draw.rect(screen, (0, 128, 255), (bar_x, reload_bar_y, bar_fill, bar_height))
-            print(f"bar_width: {bar_width}, bar_height: {bar_height}")
 
-    def get_rect(self) -> pygame.Rect:
+    def get_rect(self) -> pygame.Rect:  
         return pygame.Rect(self.position.x, self.position.y, self.width, self.height)
 
     def take_damage(self, damage: int) -> None:

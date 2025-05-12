@@ -15,6 +15,7 @@ from objects.bullet_pool import BulletPool
 import math
 from objects.spatial_hash_grid import SpatialHashGrid
 from utils.font import get_font
+import logging
 
 GRID_SIZE = 100  # 격자 셀 크기
 
@@ -64,11 +65,11 @@ class GameScene(BaseScene):
         self.create_blur_surface()
 
     def on_enter(self):
-        print("Entering Game Scene")
+        logging.debug("Entering Game Scene")
         pygame.mouse.set_visible(False)
 
     def on_exit(self) -> None:
-        print("Exiting Game Scene")
+        logging.debug("Exiting Game Scene")
         pygame.mouse.set_visible(True)
 
     def handle_event(self, event: pygame.event.Event) -> None:

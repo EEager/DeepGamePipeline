@@ -9,6 +9,7 @@ import os
 from scenes.lobby_scene import LobbyScene
 from objects.ui.ui_button import UIButton
 from utils.font import get_font
+import logging
 
 #FONT_PATH = os.path.join(os.path.dirname(__file__), "..", "D2Coding.ttf")
 FONT_PATH = os.path.expanduser("~/.fonts/D2Coding.ttf")
@@ -58,9 +59,9 @@ class MainScene(BaseScene):
         screen.blit(fps_text, (10, 10))
 
     def on_enter(self):
-        print("Entering Main Scene")
+        logging.debug("Entering Main Scene")
         pass
 
     def on_exit(self):
-        print("Exiting Main Scene")
+        logging.debug("Exiting Main Scene")
         pass
