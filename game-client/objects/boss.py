@@ -9,7 +9,6 @@ from typing import List, Optional, Tuple
 
 from config.settings import *
 from objects.base_object import BaseObject
-from objects.bullet import Bullet
 from objects.bullet_pool import BulletPool
 
 class Boss(BaseObject):
@@ -20,6 +19,7 @@ class Boss(BaseObject):
         self.radius = BOSS_RADIUS
         self.color_normal = (255, 0, 0)
         self.color_hit = (255, 100, 100)
+        self.bullet_pool = None  # BulletPool 인스턴스는 game_scene에서 설정
 
         # y 위치를 강제로 100으로 고정
         self.position = Vector2(position.x, 100)
@@ -115,13 +115,13 @@ class Boss(BaseObject):
         for i in range(num_bullets):
             angle = i * angle_step
             direction = Vector2(math.cos(angle), math.sin(angle))
-            BulletPool().get_bullet(
-                self.position.copy(),
-                direction,
-                BOSS_BULLET_SPEED,
+            self.bullet_pool.spawn_bullet(
+                self.position.x,
+                self.position.y,
+                direction.x * BOSS_BULLET_SPEED,
+                direction.y * BOSS_BULLET_SPEED,
                 ORANGE,
-                "boss",
-                1
+                1  # owner_id (1은 보스)
             )
 
     def shoot_homing(self, target_pos: Vector2) -> None:
@@ -130,11 +130,11 @@ class Boss(BaseObject):
             direction = direction.normalize()
         else:
             direction = Vector2(0, 1)  # fallback
-        BulletPool().get_bullet(
-            self.position.copy(),
-            direction,
-            HOMING_BULLET_SPEED,
+        self.bullet_pool.spawn_bullet(
+            self.position.x,
+            self.position.y,
+            direction.x * HOMING_BULLET_SPEED,
+            direction.y * HOMING_BULLET_SPEED,
             BLACK,
-            "boss_homing",
-            1
+            2  # owner_id (2는 보스의 유도탄)
         )

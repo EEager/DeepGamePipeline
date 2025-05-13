@@ -5,7 +5,6 @@ from pygame.math import Vector2
 import time
 from typing import List, Tuple, Optional
 from objects.base_object import BaseObject
-from objects.bullet import Bullet
 from config.settings import SCREEN_WIDTH, SCREEN_HEIGHT, PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SPEED, PLAYER_MAX_HEALTH, PLAYER_MAX_BULLETS, PLAYER_RELOAD_TIME, PLAYER_BULLET_SPEED
 from objects.bullet_pool import BulletPool
 from objects.base_player import BasePlayer
@@ -22,6 +21,7 @@ class Player(BasePlayer):
         self.health = PLAYER_MAX_HEALTH
         self.color = color
         self.image: Optional[pygame.Surface] = None
+        self.bullet_pool = None  # BulletPool 인스턴스는 game_scene에서 설정
 
         self.bullets: List[Vector2] = []
         self.max_bullets = PLAYER_MAX_BULLETS
@@ -87,15 +87,15 @@ class Player(BasePlayer):
             direction = (mouse_pos - self.position)
             if direction.length() > 0:
                 direction = direction.normalize()
-                bullet = BulletPool().get_bullet(
-                    (self.position + Vector2(self.width//2, self.height//2)).copy(),
-                    direction,
-                    PLAYER_BULLET_SPEED,
+                bullet_id = self.bullet_pool.spawn_bullet(
+                    (self.position + Vector2(self.width//2, self.height//2)).x,
+                    (self.position + Vector2(self.width//2, self.height//2)).y,
+                    direction.x * PLAYER_BULLET_SPEED,
+                    direction.y * PLAYER_BULLET_SPEED,
                     self.color,
-                    "player",
-                    1
+                    0  # owner_id (0은 플레이어)
                 )
-                if bullet:
+                if bullet_id is not None:
                     self.current_bullets -= 1
                     self.shoot_timer = self.shoot_cooldown
                     self.last_shot_time = pygame.time.get_ticks()
@@ -167,22 +167,5 @@ class Player(BasePlayer):
 
     def heal(self, amount: int) -> None:
         self.health = min(self.max_health, self.health + amount)
-
-    def shoot(self) -> None:
-        if not self.can_shoot:
-            return
-
-        # 총알 풀에서 총알 가져오기
-        bullet = BulletPool().get_bullet(
-            self.position,
-            Vector2(0, -1),  # 위로 발사
-            PLAYER_BULLET_SPEED,
-            self.color,
-            "player"
-        )
-        
-        if bullet:  # 총알을 성공적으로 가져왔다면
-            self.last_shot_time = time.time()
-            self.can_shoot = False
 
     # 필요시 게임 전용 메서드 추가

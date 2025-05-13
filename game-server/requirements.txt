@@ -3,3 +3,4 @@ uvicorn
 aiokafka
 pydantic
 aiomysql
+numpy

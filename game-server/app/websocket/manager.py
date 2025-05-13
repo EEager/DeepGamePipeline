@@ -4,9 +4,120 @@ import sys
 import time
 import os
 import logging
+import numpy as np
+from dataclasses import dataclass
+from typing import List, Dict, Optional
 
-from app.services.game_loop import GameWorld, GameLoop
+#from app.services.game_loop import GameWorld, GameLoop
 
+# 로깅 설정
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+TICK_RATE = 30  # 30 ticks per second
+
+@dataclass
+class BulletPool:
+    MAX_BULLETS = 1000
+    POSITION_SIZE = 2  # x, y
+    VELOCITY_SIZE = 2  # vx, vy
+    COLOR_SIZE = 3    # r, g, b
+    
+    def __init__(self):
+        # 위치, 속도, 색상, 활성화 상태를 numpy 배열로 관리
+        self.positions = np.zeros((self.MAX_BULLETS, self.POSITION_SIZE), dtype=np.float32)
+        self.velocities = np.zeros((self.MAX_BULLETS, self.VELOCITY_SIZE), dtype=np.float32)
+        self.colors = np.zeros((self.MAX_BULLETS, self.COLOR_SIZE), dtype=np.uint8)
+        self.active = np.zeros(self.MAX_BULLETS, dtype=bool)
+        self.owners = np.zeros(self.MAX_BULLETS, dtype=np.int64)  # 플레이어 ID를 int64로 변경
+        self.next_id = 0
+        self.created_at = np.zeros(self.MAX_BULLETS, dtype=np.float32)
+        self.prev_positions = np.zeros((self.MAX_BULLETS, self.POSITION_SIZE), dtype=np.float32)
+        self.last_update_time = np.zeros(self.MAX_BULLETS, dtype=np.float32)
+        
+    def spawn_bullet(self, x: float, y: float, vx: float, vy: float, 
+                     color: tuple, owner_id: int) -> Optional[int]:
+        logger.debug(f"[spawn_bullet] 시작 - next_id: {self.next_id}, pos: ({x}, {y}), vel: ({vx}, {vy}), owner: {owner_id}")
+        
+        if self.next_id >= self.MAX_BULLETS:
+            logger.debug(f"[spawn_bullet] 실패 - bullet_pool이 가득 참 (next_id: {self.next_id}, MAX_BULLETS: {self.MAX_BULLETS})")
+            return None
+            
+        # active 상태를 먼저 설정
+        self.active[self.next_id] = True
+        
+        # 위치와 이전 위치를 동일하게 설정
+        self.positions[self.next_id] = [x, y]
+        self.prev_positions[self.next_id] = [x, y]  # 이전 위치도 동일하게 설정
+        self.velocities[self.next_id] = [vx, vy]
+        self.colors[self.next_id] = color
+        self.owners[self.next_id] = owner_id
+        self.created_at[self.next_id] = time.time()
+        self.last_update_time[self.next_id] = time.time()
+        
+        bullet_id = self.next_id
+        self.next_id = (self.next_id + 1) % self.MAX_BULLETS
+        logger.debug(f"[spawn_bullet] 성공 - bullet_id: {bullet_id}, next_id: {self.next_id}")
+        return bullet_id
+        
+    def update(self, bounds: tuple, delta_time: float, bullet_speed: float):
+        # 이전 위치 저장
+        self.prev_positions[self.active] = self.positions[self.active]
+        
+        # 위치 업데이트 (벡터화된 연산)
+        self.positions[self.active] += self.velocities[self.active] * delta_time * bullet_speed
+        
+        # 화면 밖 총알 비활성화
+        left, top, right, bottom = bounds
+        out_of_bounds = (
+            (self.positions[:, 0] < left) |
+            (self.positions[:, 0] > right) |
+            (self.positions[:, 1] < top) |
+            (self.positions[:, 1] > bottom)
+        )
+        self.active[out_of_bounds] = False
+        
+        # 수명이 지난 총알 비활성화 (5초)
+        current_time = time.time()
+        expired = (current_time - self.created_at) > 7.0
+        self.active[expired] = False
+        
+        # 마지막 업데이트 시간 갱신
+        self.last_update_time[self.active] = current_time
+        
+    def get_active_bullets(self) -> List[Dict]:
+        active_mask = self.active
+        return [
+            {
+                'id': int(i),
+                'x': float(self.positions[i, 0]),
+                'y': float(self.positions[i, 1]),
+                'vx': float(self.velocities[i, 0]),
+                'vy': float(self.velocities[i, 1]),
+                'color': tuple(map(int, self.colors[i])),
+                'owner': int(self.owners[i])
+            }
+            for i in np.where(active_mask)[0]
+        ]
+
+    def deactivate(self, bullet_id: int) -> None:
+        """
+        특정 총알을 비활성화합니다.
+        TODO: 구현 필요
+        - bullet_id가 유효한지 확인
+        - 해당 총알의 active 상태를 False로 변경
+        - 필요한 경우 추가 정리 작업 수행
+        """
+        pass
+
+    def clear(self) -> None:
+        """
+        모든 총알을 비활성화합니다.
+        TODO: 구현 필요
+        - 모든 총알의 active 상태를 False로 변경
+        - 필요한 경우 추가 정리 작업 수행
+        """
+        pass
 
 class ConnectionManager:
     def __init__(self):
@@ -38,47 +149,68 @@ class LobbyManager:
         self.user_map = {}  # user: websocket
         self.countdown_task = None
         self.user_colors = {}  # user: color
-        self.lobby_bullets = {}  # user: [bullet1, bullet2, ...]
+        self.bullet_pool = BulletPool()
         self.last_shot_time = {}  # user: last_shot_timestamp
-        self.next_bullet_id = 0
         self.lobby_tick = 0
         self.lobby_loop_task = asyncio.create_task(self.lobby_loop())
         self.PRACTICE_LEFT = 32
         self.PRACTICE_TOP = 32
         self.PRACTICE_RIGHT = self.PRACTICE_LEFT + (1280 - 320 - 32 * 3)  # main_width
         self.PRACTICE_BOTTOM = self.PRACTICE_TOP + (int(720 * 0.52) - 20)
+        self.BULLET_SPEED = 200  # 총알 속도 상수
+        self.next_owner_id = 1  # owner_id를 1부터 시작하도록 설정
 
     async def lobby_loop(self):
+        last_update = time.time()
         while True:
-            self.update_lobby_bullets()
+            current_time = time.time()
+            delta_time = current_time - last_update
+            last_update = current_time
+            
+            self.update_lobby_bullets(delta_time)
             await self.broadcast_lobby_state()
             self.lobby_tick += 1
-            await asyncio.sleep(1/20)
+            await asyncio.sleep(1/TICK_RATE)
 
     async def connect(self, websocket, user):
-        # 색상은 서버에서만 할당/관리
-        if user not in self.user_colors:
-            color = tuple(random.randint(80, 220) for _ in range(3))
-            self.user_colors[user] = color
-        else:
-            color = self.user_colors[user]
-        self.players[websocket] = PlayerState(user, color)
+        # 닉네임/색상은 서버에서만 만들어주고 할당/관리
+        if websocket in self.players:
+            logger.error(f"[connect] 이미 입장한 유저 - user: {user}")
+            return
+        
+        while True:
+            color = tuple(random.randint(40, 220) for _ in range(3))
+            if not color in self.user_colors.values():
+                self.user_colors[user] = color
+                break
+                
+        nickname = f"user_{random.randint(1, 1000)}"
+        self.players[websocket] = PlayerState(nickname, color)
         self.user_map[user] = websocket
-        await self.broadcast({"type": "system", "msg": f"{user}님이 입장하셨습니다."})
-        # 상태 브로드캐스트는 tick loop에서만!
+        
+         # 방금 접속한 유저 nick, color를 준다
+        await self.unicast_to_user(user, {
+            "type": "lobby_start",
+            "color": color,
+            "nickname": nickname
+        })
+        
+        # 모든 유저에게 입장 메시지 브로드캐스트
+        await self.broadcast({"type": "system", "msg": f"{nickname}님이 입장하셨습니다."})
 
     def disconnect(self, websocket):
-        if websocket in self.players:
-            user = self.players[websocket].user
-            logging.debug(f"[Before delete] refcount: {sys.getrefcount(websocket)}")
-            del self.user_map[user]
-            del self.players[websocket]
-            logging.debug(f"[After delete] refcount: {sys.getrefcount(websocket)}")
-            # # 색상은 유지 (재접속 시 같은 색상 사용)
-            # if user in self.user_colors:
-            #     del self.user_colors[user]
-            # 퇴장 system 메시지 브로드캐스트
-            asyncio.create_task(self.broadcast({"type": "system", "msg": f"{user}님이 퇴장하셨습니다."}))
+        try:
+            if websocket in self.players:
+                user = self.players[websocket].user
+                logging.debug(f"[Before delete] refcount: {sys.getrefcount(websocket)}")
+                if user in self.user_map:
+                    del self.user_map[user]
+                del self.players[websocket]
+                logging.debug(f"[After delete] refcount: {sys.getrefcount(websocket)}")
+                # 퇴장 system 메시지 브로드캐스트
+                asyncio.create_task(self.broadcast({"type": "system", "msg": f"{user}님이 퇴장하셨습니다."}))
+        except Exception as e:
+            logger.error(f"Error in disconnect: {str(e)}", exc_info=True)
 
     def set_ready(self, websocket, ready):
         if websocket in self.players:
@@ -95,69 +227,70 @@ class LobbyManager:
         return self.players and all(p.ready for p in self.players.values())
 
     def spawn_lobby_bullet(self, user, x, y, vx, vy, color):
+        logger.debug(f"[spawn_lobby_bullet] 시작 - user: {user}, pos: ({x}, {y}), vel: ({vx}, {vy})")
+        
         # 연속 발사 제한 (0.2초)
         current_time = time.time()
         if user in self.last_shot_time and current_time - self.last_shot_time[user] < 0.2:
+            logger.debug(f"[spawn_lobby_bullet] 연속 발사 제한 - user: {user}, 마지막 발사: {current_time - self.last_shot_time[user]:.3f}초 전")
             return False
         
-        # 사용자별 총알 리스트 초기화
-        if user not in self.lobby_bullets:
-            self.lobby_bullets[user] = []
-        bullet = {
-            'id': self.next_bullet_id,
-            'user': user,
-            'x': x, 'y': y, 'vx': vx, 'vy': vy,
-            'color': color,
-            'active': True
-        }
-        self.lobby_bullets[user].append(bullet)
-        self.next_bullet_id += 1
-        self.last_shot_time[user] = current_time
-        return True
+        # 총알 생성
+        owner_id = self.next_owner_id
+        self.next_owner_id += 1  # 다음 ID 준비
+        logger.debug(f"[spawn_lobby_bullet] 총알 생성 시도 - owner_id: {owner_id}")
+        
+        bullet_id = self.bullet_pool.spawn_bullet(x, y, vx, vy, color, owner_id)
+        if bullet_id is not None:
+            self.last_shot_time[user] = current_time
+            logger.debug(f"[spawn_lobby_bullet] 총알 생성 성공 - bullet_id: {bullet_id}")
+            return True
+            
+        logger.debug(f"[spawn_lobby_bullet] 총알 생성 실패 - bullet_pool이 가득 참")
+        return False
 
-    def update_lobby_bullets(self):
-        if not self.lobby_bullets:
-            return  # 총알 없으면 바로 리턴 (오버헤드 거의 없음)
-        # 이동 및 화면 밖 제거
-        for user, bullets in list(self.lobby_bullets.items()):
-            # 연습장 범위 내에 있는 총알만 남김
-            self.lobby_bullets[user] = [
-                b for b in bullets
-                if self.PRACTICE_LEFT <= b['x'] <= self.PRACTICE_RIGHT and self.PRACTICE_TOP <= b['y'] <= self.PRACTICE_BOTTOM
-            ]
-            for b in self.lobby_bullets[user]:
-                b['x'] += b['vx']
-                b['y'] += b['vy']
-            # 사용자의 모든 총알이 제거되면 리스트도 제거
-            if not self.lobby_bullets[user]:
-                del self.lobby_bullets[user]
+    def update_lobby_bullets(self, delta_time):
+        bounds = (self.PRACTICE_LEFT, self.PRACTICE_TOP, 
+                 self.PRACTICE_RIGHT, self.PRACTICE_BOTTOM)
+        self.bullet_pool.update(bounds, delta_time, self.BULLET_SPEED)
 
-    def handle_shoot(self, user, x, y, vx, vy, color):
+    async def handle_shoot(self, user, x, y, vx, vy, color):
         """총알 발사 메시지 처리"""
+        logger.debug(f"[handle_shoot] 시작 - user: {user}, pos: ({x}, {y}), vel: ({vx}, {vy})")
         self.spawn_lobby_bullet(user, x, y, vx, vy, color)
         # 상태 브로드캐스트는 tick loop에서만!
 
     async def broadcast_lobby_state(self):
-        # 모든 총알을 하나의 리스트로 합치기
-        all_bullets = []
-        for bullets in self.lobby_bullets.values():
-            all_bullets.extend(bullets)
         data = {
             "type": "lobby",
+            "tick": self.lobby_tick,
             "players": [
                 {"user": p.user, "x": p.x, "y": p.y, "ready": p.ready, "color": p.color}
                 for p in self.players.values()
             ],
-            "bullets": all_bullets
+            "bullets": self.bullet_pool.get_active_bullets()
         }
+        logger.debug(f"[broadcast_lobby_state] 브로드캐스트 시작 - tick: {self.lobby_tick}, 플레이어 수: {len(self.players)}, 총알 수: {len(data['bullets'])}")
         await self.broadcast(data)
+        logger.debug(f"[broadcast_lobby_state] 브로드캐스트 완료")
 
     async def broadcast(self, data):
+        logger.debug(f"[broadcast] 메시지 전송 시작 - type: {data.get('type')}, 연결된 클라이언트 수: {len(self.players)}")
         for ws in list(self.players.keys()):
             try:
                 await ws.send_json(data)
-            except Exception:
+                logger.debug(f"[broadcast] 메시지 전송 성공 - type: {data.get('type')}")
+            except Exception as e:
+                logger.error(f"[broadcast] 메시지 전송 실패: {str(e)}")
                 self.disconnect(ws)
+
+    async def unicast_to_user(self, user: str, message: dict):
+        if user in self.user_map:
+            websocket = self.user_map[user]
+            try:
+                await websocket.send_json(message)
+            except Exception as e:
+                print(f"❗ {user}에게 메시지 전송 실패: {e}")
 
     async def start_countdown(self):
         for i in range(3, 0, -1):
@@ -166,47 +299,86 @@ class LobbyManager:
         await self.broadcast({"type": "start"})
         self.countdown_task = None
 
-# --- 멀티게임용 싱글톤 월드/루프/입력큐 ---
-game_world = GameWorld()
-input_queue = []  # [(user, input_dict)]
+# # --- 멀티게임용 싱글톤 월드/루프/입력큐 ---
+# game_world = GameWorld()
+# input_queue = []  # [(user, input_dict)]
 
-async def broadcast_state(world):
-    # 상태 메시지 예시
-    msg = {
-        "type": "state",
-        "tick": world.tick,
-        "players": list(world.players.values()),
-        "bullets": list(world.bullets.values()),
-        "boss": world.boss,
-        "items": list(world.items.values()),
-        # ... 기타 오브젝트
-    }
-    # 실제 연결된 모든 클라이언트에 브로드캐스트
-    for ws in list(game_world.players.keys()):
-        try:
-            await ws.send_json(msg)
-        except Exception:
-            pass
+# async def broadcast_state(world, game_state=None):
+#     # 상태 메시지
+#     msg = {
+#         "type": "state",
+#         "tick": world.tick,
+#         "players": [
+#             {
+#                 "id": user,
+#                 "nickname": player.get('nickname', user),
+#                 "x": player['x'],
+#                 "y": player['y'],
+#                 "health": player.get('health', 100),
+#                 "max_health": player.get('max_health', 100),
+#                 "color": player.get('color', (0,0,255))
+#             }
+#             for user, player in world.players.items()
+#         ],
+#         "bullets": [
+#             {
+#                 "id": bullet['id'],
+#                 "x": bullet['x'],
+#                 "y": bullet['y'],
+#                 "vx": bullet['vx'],
+#                 "vy": bullet['vy'],
+#                 "owner": bullet['owner'],
+#                 "color": bullet['color']
+#             }
+#             for bullet in world.bullets.values()
+#         ],
+#         "boss": world.boss,
+#         "items": [
+#             {
+#                 "id": item['id'],
+#                 "x": item['x'],
+#                 "y": item['y'],
+#                 "type": item['type']
+#             }
+#             for item in world.items.values()
+#         ]
+#     }
+    
+#     # 게임 상태 메시지 전송
+#     for ws in list(world.players.keys()):
+#         try:
+#             await ws.send_json(msg)
+#         except Exception:
+#             pass
+    
+#     # 게임 오버/클리어 메시지 전송
+#     if game_state:
+#         game_msg = {"type": game_state}
+#         for ws in list(world.players.keys()):
+#             try:
+#                 await ws.send_json(game_msg)
+#             except Exception:
+#                 pass
 
-# 게임 루프 인스턴스
-multi_game_loop = GameLoop(game_world, broadcast_state)
+# # 게임 루프 인스턴스
+# multi_game_loop = GameLoop(game_world, broadcast_state)
 
-def queue_input(user, input_dict):
-    input_queue.append((user, input_dict))
+# def queue_input(user, input_dict):
+#     input_queue.append((user, input_dict))
 
-# 입력 큐를 world에 반영하는 함수(예시)
-def process_inputs():
-    while input_queue:
-        user, inp = input_queue.pop(0)
-        # 예: 이동 입력 반영
-        if user in game_world.players:
-            p = game_world.players[user]
-            p['x'] += inp.get('dx', 0)
-            p['y'] += inp.get('dy', 0)
-            # 총알 발사 입력 처리
-            if inp.get('shoot'):
-                # 예시: 플레이어 앞 방향으로 총알 생성
-                vx, vy = inp.get('vx', 0), inp.get('vy', -6)
-                color = p.get('color', (255,255,0))
-                game_world.spawn_bullet(user, p['x'], p['y'], vx, vy, color)
-        # 기타 입력 처리
+# # 입력 큐를 world에 반영하는 함수(예시)
+# def process_inputs():
+#     while input_queue:
+#         user, inp = input_queue.pop(0)
+#         # 예: 이동 입력 반영
+#         if user in game_world.players:
+#             p = game_world.players[user]
+#             p['x'] += inp.get('dx', 0)
+#             p['y'] += inp.get('dy', 0)
+#             # 총알 발사 입력 처리
+#             if inp.get('shoot'):
+#                 # 예시: 플레이어 앞 방향으로 총알 생성
+#                 vx, vy = inp.get('vx', 0), inp.get('vy', -6)
+#                 color = p.get('color', (255,255,0))
+#                 game_world.spawn_bullet(user, p['x'], p['y'], vx, vy, color)
+#         # 기타 입력 처리

@@ -7,7 +7,6 @@ from objects.object_manager import ObjectManager
 from objects.player import Player
 from objects.boss import Boss
 from objects.heal_item import HealItem
-from objects.bullet import Bullet
 from config.settings import SCREEN_WIDTH, SCREEN_HEIGHT, HEAL_ITEM_SPAWN_INTERVAL
 from pygame.math import Vector2
 import os
@@ -39,10 +38,12 @@ class GameScene(BaseScene):
         if bullet_color is None:
             bullet_color = color
         player = Player(user, color, Vector2(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 100), bullet_color)
+        player.bullet_pool = self.bullet_pool  # BulletPool 인스턴스 전달
         self.object_manager.add_object(player, "player")
         
         # 보스 생성 및 추가
         boss = Boss(Vector2(SCREEN_WIDTH // 2, 100))
+        boss.bullet_pool = self.bullet_pool  # BulletPool 인스턴스 전달
         self.object_manager.add_object(boss, "boss")
         
         # 게임 상태 변수
@@ -153,7 +154,7 @@ class GameScene(BaseScene):
         cx, cy = get_grid_cell(obj.position)
         result = []
         for bullet in self.bullet_pool.get_active_bullets():
-            bx, by = get_grid_cell(bullet.position)
+            bx, by = get_grid_cell(Vector2(bullet['x'], bullet['y']))
             if abs(bx - cx) <= 1 and abs(by - cy) <= 1:
                 result.append(bullet)
         return result
@@ -162,20 +163,24 @@ class GameScene(BaseScene):
         # 플레이어와 보스 총알 충돌 체크 (근처 총알만 검사)
         for player in self.object_manager.get_objects("player"):
             for bullet in self.get_nearby_bullets(player):
-                if bullet.active and bullet.owner in ("boss", "boss_homing"):
-                    if player.get_rect().colliderect(bullet.get_rect()):
-                        player.take_damage(bullet.damage)
-                        bullet.active = False
+                if bullet['owner'] in (1, 2):  # 1: 보스, 2: 보스의 유도탄
+                    if player.get_rect().colliderect(pygame.Rect(
+                        bullet['x'] - 5, bullet['y'] - 5, 10, 10
+                    )):
+                        player.take_damage(1)
+                        self.bullet_pool.active[bullet['id']] = False
                         if player.health <= 0:
                             self.game_over = True
 
         # 보스와 플레이어 총알 충돌 체크 (근처 총알만 검사)
         for boss in self.object_manager.get_objects("boss"):
             for bullet in self.get_nearby_bullets(boss):
-                if bullet.active and bullet.owner == "player":
-                    if boss.get_rect().colliderect(bullet.get_rect()):
-                        boss.take_damage(bullet.damage)
-                        bullet.active = False
+                if bullet['owner'] == 0:  # 0: 플레이어
+                    if boss.get_rect().colliderect(pygame.Rect(
+                        bullet['x'] - 5, bullet['y'] - 5, 10, 10
+                    )):
+                        boss.take_damage(1)
+                        self.bullet_pool.active[bullet['id']] = False
                         if boss.health <= 0:
                             self.game_clear = True
 
@@ -185,8 +190,3 @@ class GameScene(BaseScene):
                 if heal_item.active and player.get_rect().colliderect(heal_item.get_rect()):
                     player.heal(heal_item.heal_amount)
                     heal_item.active = False
-
-    def remove_bullet(self, bullet):
-        idx = self.active_bullets.index(bullet)
-        self.active_bullets[idx] = self.active_bullets[-1]
-        self.active_bullets.pop()
