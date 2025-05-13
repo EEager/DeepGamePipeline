@@ -19,7 +19,6 @@ from objects.bullet_pool import BulletPool
 class LobbyScene(BaseScene):
     def __init__(self):
         self.font = get_font(24)
-        # self.nickname = f"user{random.randint(1, 1000)}"
         self.nickname = "not_set"
         self.my_color = (120,120,120)  # 기본 색상으로 초기화
         margin = 32
@@ -41,10 +40,14 @@ class LobbyScene(BaseScene):
         self.running = True
         self.last_ping = time.time()
         self.ready = False
-        self.connect_ws()
         self.countdown_value = None
         self.countdown_timer = 0
         self.player_states = {}  # user: {'prev': {'pos': ...}, 'curr': {'pos': ...}, 'last_update_time': ...}
+        
+        # 스레드 안전성을 위한 락
+        self.lock = threading.Lock()
+        
+        self.connect_ws()
 
     def connect_ws(self):
         def run():
@@ -80,89 +83,71 @@ class LobbyScene(BaseScene):
     def on_message(self, ws, message):
         # logging.debug(f"[WebSocket] on_message: {message}")
         data = json.loads(message)
-        if data["type"] == "chat":
-            # 서버에서 받은 색상 사용
-            color = None
-            for p in self.players:
-                if p['user'] == data['user']:
-                    color = tuple(p['color'])
-                    break
-            if color is None:
-                color = (120,120,120)
-            self.chat_box.add_message((data['user'], data['msg'], color))
-        elif data["type"] == "system":
-            # [System] 태그와 회색, 굵은 글씨 등으로 표시
-            self.chat_box.add_message(("System", data['msg'], (120,120,120)))
-            # 입장 메시지면 내 정보 설정
-            if "퇴장" in data['msg']:
-                user = data['msg'].split("님이")[0]
-                if user in self.practice_players:
-                    self.practice_players.pop(user, None)
-                    if user in self.player_states:
-                        self.player_states.pop(user, None)
-        elif data["type"] == "lobby_start":
-            self.nickname = data['nickname']
-            self.my_color = tuple(data['color'])
-            self.server_status = True
-            self.lobby_panel.set_server_status(True)
-        elif data["type"] == "lobby":
-            tick = data.get("tick", 0)
-            logging.debug(f"[lobby_scene] 로비 상태 업데이트 - tick: {tick}, 플레이어 수: {len(data['players'])}, 총알 수: {len(data.get('bullets', []))}")
-            
-            # 서버에서 받은 전체 플레이어 상태로 동기화
-            self.players = data["players"]
-        
-            # 현재 연결된 플레이어 목록
-            #connected_users = {p["user"] for p in self.players}
-            
-            # 연결이 끊긴 플레이어 제거 (리스트로 변환 후 처리)
-            # disconnected_users = [user for user in self.practice_players.keys() if user not in connected_users]
-            # for user in disconnected_users:
-            #     self.practice_players.pop(user, None)
-            #     self.player_states.pop(user, None)
-            
-            # 연결된 플레이어 정보 업데이트
-            for p in self.players:
-                user = p["user"]
-                # 보간용 상태 저장
-                state = self.player_states.setdefault(user, {})
-                state['prev'] = state.get('curr', {'pos': [p["x"], p["y"]]})
-                state['curr'] = {'pos': [p["x"], p["y"]]}
-                state['last_update_time'] = time.time()
-                if user not in self.practice_players:
-                    self.practice_players[user] = {
-                        'pos': [p["x"], p["y"]],
-                        'dir': [0, 0],
-                        'ready': p["ready"],
-                        'color': tuple(p["color"])  # 서버에서 받은 색상 저장
-                    }
-                else:
-                    self.practice_players[user].update({
-                        'pos': [p["x"], p["y"]],
-                        'ready': p["ready"],
-                    })
-            # 서버에서 받은 총알 정보로 동기화
-            self.bullet_pool.update_from_server(data.get("bullets", []))
-            self.lobby_panel.set_players(self.players)
-            logging.debug(f"[lobby_scene] 로비 상태 업데이트 완료")
-        elif data["type"] == "countdown":
-            self.countdown_value = str(data["value"])
-            self.countdown_timer = 1.0
-        elif data["type"] == "start":
-            self.countdown_value = "START"
-            self.countdown_timer = 1.0
-            self.running = False
-            # --- 멀티게임씬으로 전환 ---
-            color = None
-            for p in self.players:
-                if p['user'] == self.nickname:
-                    color = tuple(p['color'])
-                    break
-            if color is None:
-                color = (120,120,120)
-            msg = {"type": "start_multigame", "user": self.nickname, "color": color}
-            ws.send(json.dumps(msg))
-            SceneManager.get_instance().change_scene(MultiGameScene(ws, self.nickname, color))
+        with self.lock:
+            if data["type"] == "chat":
+                self.chat_box.add_message((data['user'], data['msg'], data['color']))
+            elif data["type"] == "system":
+                # [System] 태그와 회색, 굵은 글씨 등으로 표시
+                self.chat_box.add_message(("System", data['msg'], (120,120,120)))
+                # 입장 메시지면 내 정보 설정
+                if "퇴장" in data['msg']:
+                    user = data['msg'].split("님이")[0]
+                    if user in self.practice_players:
+                        self.practice_players.pop(user, None)
+                        if user in self.player_states:
+                            self.player_states.pop(user, None)
+            elif data["type"] == "lobby_start":
+                self.nickname = data['nickname']
+                self.my_color = tuple(data['color'])
+                self.server_status = True
+                self.lobby_panel.set_server_status(True)
+            elif data["type"] == "lobby":
+                tick = data.get("tick", 0)
+                
+                # 서버에서 받은 전체 플레이어 상태로 동기화
+                self.players = data["players"]
+                
+                # 연결된 플레이어 정보 업데이트
+                for p in self.players:
+                    user = p["user"]
+                    # 보간용 상태 저장
+                    state = self.player_states.setdefault(user, {})
+                    state['prev'] = state.get('curr', {'pos': [p["x"], p["y"]]})
+                    state['curr'] = {'pos': [p["x"], p["y"]]}
+                    state['last_update_time'] = time.time()
+                    if user not in self.practice_players:
+                        self.practice_players[user] = {
+                            'pos': [p["x"], p["y"]],
+                            'dir': [0, 0],
+                            'ready': p["ready"],
+                            'color': tuple(p["color"])  # 서버에서 받은 색상 저장
+                        }
+                    else:
+                        self.practice_players[user].update({
+                            'pos': [p["x"], p["y"]],
+                            'ready': p["ready"],
+                        })
+                # 서버에서 받은 총알 정보로 동기화
+                self.bullet_pool.update_from_server(data.get("bullets", []))
+                self.lobby_panel.set_players(self.players)
+            elif data["type"] == "countdown":
+                self.countdown_value = str(data["value"])
+                self.countdown_timer = 1.0
+            elif data["type"] == "start":
+                self.countdown_value = "START"
+                self.countdown_timer = 1.0
+                self.running = False
+                # --- 멀티게임씬으로 전환 ---
+                color = None
+                for p in self.players:
+                    if p['user'] == self.nickname:
+                        color = tuple(p['color'])
+                        break
+                if color is None:
+                    color = (120,120,120)
+                msg = {"type": "start_multigame", "user": self.nickname, "color": color}
+                ws.send(json.dumps(msg))
+                SceneManager.get_instance().change_scene(MultiGameScene(ws, self.nickname, color))
 
     def send_ready(self):
         if self.ws and self.server_status:
@@ -183,6 +168,31 @@ class LobbyScene(BaseScene):
 
         # 연습 공간 조작
         if not self.chat_box.active:
+            # 연습 플레이어 이동
+            keys = pygame.key.get_pressed()
+            if keys:
+                me = self.practice_players[self.nickname]
+                dx = dy = 0
+                if keys[pygame.K_a]: dx -= 1
+                if keys[pygame.K_d]: dx += 1
+                if keys[pygame.K_w]: dy -= 1
+                if keys[pygame.K_s]: dy += 1
+                if dx != 0 or dy != 0:
+                    new_x = me['pos'][0] + dx * 3
+                    new_y = me['pos'][1] + dy * 3
+                    
+                    # 연습 공간 내에서만 이동
+                    new_x = max(self.practice_rect.x+10, min(self.practice_rect.x+self.practice_rect.w-10, new_x))
+                    new_y = max(self.practice_rect.y+10, min(self.practice_rect.y+self.practice_rect.h-10, new_y))
+                    #logging.debug(f"[lobby_scene] 연습 플레이어 이동 - {self.nickname}: {new_x}, {new_y}")
+                    if self.ws:
+                        self.ws.send(json.dumps({
+                            "type": "move",
+                            "user": self.nickname,
+                            "x": new_x,
+                            "y": new_y
+                        }))
+            
             # 마우스 클릭으로 총알 발사
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mx, my = event.pos
@@ -195,7 +205,7 @@ class LobbyScene(BaseScene):
                     # 서버에 총알 정보 전송
                     if self.ws and self.server_status:
                         self.ws.send(json.dumps({
-                            "type": "shoot",
+                            "type": "Lobby_shoot",
                             "user": self.nickname,
                             "x": px,
                             "y": py,
@@ -215,31 +225,33 @@ class LobbyScene(BaseScene):
         self.lobby_panel.set_server_status(self.server_status)
         self.lobby_panel.set_players(self.players)
 
-        # 연습 플레이어 이동
-        if not self.chat_box.active:
-            keys = pygame.key.get_pressed()
-            if keys:
-                me = self.practice_players[self.nickname]
-                dx = dy = 0
-                if keys[pygame.K_a]: dx -= 1
-                if keys[pygame.K_d]: dx += 1
-                if keys[pygame.K_w]: dy -= 1
-                if keys[pygame.K_s]: dy += 1
-                if dx != 0 or dy != 0:
-                    new_x = me['pos'][0] + dx * 3
-                    new_y = me['pos'][1] + dy * 3
+        # # 연습 플레이어 이동
+        # if not self.chat_box.active:
+        #     keys = pygame.key.get_pressed()
+        #     if keys:
+        #         me = self.practice_players[self.nickname]
+        #         dx = dy = 0
+        #         if keys[pygame.K_a]: dx -= 1
+        #         if keys[pygame.K_d]: dx += 1
+        #         if keys[pygame.K_w]: dy -= 1
+        #         if keys[pygame.K_s]: dy += 1
+        #         dx+=1
+        #         dy+=1
+        #         if dx != 0 or dy != 0:
+        #             new_x = me['pos'][0] + dx * 3
+        #             new_y = me['pos'][1] + dy * 3
                     
-                    # 연습 공간 내에서만 이동
-                    new_x = max(self.practice_rect.x+10, min(self.practice_rect.x+self.practice_rect.w-10, new_x))
-                    new_y = max(self.practice_rect.y+10, min(self.practice_rect.y+self.practice_rect.h-10, new_y))
-                    
-                    if self.ws:
-                        self.ws.send(json.dumps({
-                            "type": "move",
-                            "user": self.nickname,
-                            "x": new_x,
-                            "y": new_y
-                        }))
+        #             # 연습 공간 내에서만 이동
+        #             new_x = max(self.practice_rect.x+10, min(self.practice_rect.x+self.practice_rect.w-10, new_x))
+        #             new_y = max(self.practice_rect.y+10, min(self.practice_rect.y+self.practice_rect.h-10, new_y))
+        #             logging.debug(f"[lobby_scene] 연습 플레이어 이동 - {self.nickname}: {new_x}, {new_y}")
+        #             if self.ws:
+        #                 self.ws.send(json.dumps({
+        #                     "type": "move",
+        #                     "user": self.nickname,
+        #                     "x": new_x,
+        #                     "y": new_y
+        #                 }))
 
         if self.countdown_value:
             self.countdown_timer -= delta_time
@@ -247,55 +259,52 @@ class LobbyScene(BaseScene):
                 self.countdown_value = None
 
     def render(self, screen: pygame.Surface, fps: int = 0) -> None:
-        screen.fill((230, 240, 255))
-        # FPS 표시
-        fps_text = self.font.render(f"FPS: {fps}", True, (0, 0, 0))
-        screen.blit(fps_text, (10, 10))
-        # 연습 공간
-        pygame.draw.rect(screen, (220,230,250), self.practice_rect)
-        pygame.draw.rect(screen, (120,120,180), self.practice_rect, 2)
-        
-        # 연습 플레이어 (복사본으로 순회)
-        for user, p in list(self.practice_players.items()):
-            # 서버에서 받은 색상 사용
-            state = self.player_states.get(user)
-            if state and 'prev' in state and 'curr' in state:
-                pos0 = state['prev']['pos']
-                pos1 = state['curr']['pos']
-                dt = 1/20  # 서버 업데이트 주기
-                elapsed = time.time() - state['last_update_time']
-                t = min(max(elapsed / dt, 0), 1)
-                interp_pos = lerp_pos(pos0, pos1, t)
-            else:
-                interp_pos = p['pos']
-            pygame.draw.circle(screen, p['color'], (int(interp_pos[0]), int(interp_pos[1])), 12)
-            name_surf = get_font(14).render(user, True, p['color'])
-            screen.blit(name_surf, (interp_pos[0]-name_surf.get_width()//2, interp_pos[1]-24))
-            if p['ready']:
-                ready_surf = get_font(12).render("READY", True, (0, 200, 0))
-                screen.blit(ready_surf, (interp_pos[0]-ready_surf.get_width()//2, interp_pos[1]+20))
-        
-        # 연습 총알
-        self.bullet_pool.render(screen)
-        # for bullet in self.bullet_pool.get_active_bullets():
-        #     pos = self.bullet_pool.get_interpolated_positions()[bullet['id']]
-        #     pygame.draw.circle(screen, bullet['color'], (int(pos[0]), int(pos[1])), 5)
-        
-        # 채팅/패널
-        self.lobby_panel.render(screen)
-        self.chat_box.render(screen)
-        
-        # 카운트다운 애니메이션
-        if self.countdown_value:
-            base_size = 120 if self.countdown_value != "START" else 80
-            grow = 1.2 - 0.4 * (1.0 - self.countdown_timer)
-            alpha = int(255 * min(1.0, self.countdown_timer + 0.2))
-            font = get_font(int(base_size * grow))
-            text = self.countdown_value
-            text_surf = font.render(text, True, (255, 80, 80))
-            text_surf.set_alpha(alpha)
-            rect = text_surf.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2))
-            screen.blit(text_surf, rect)
+        with self.lock:
+            # FPS 표시
+            fps_text = self.font.render(f"FPS: {fps}", True, (0, 0, 0))
+            screen.blit(fps_text, (10, 10))
+            # 연습 공간
+            pygame.draw.rect(screen, (220,230,250), self.practice_rect)
+            pygame.draw.rect(screen, (120,120,180), self.practice_rect, 2)
+            
+            # 연습 플레이어 (복사본으로 순회)
+            for user, p in list(self.practice_players.items()):
+                # 서버에서 받은 색상 사용
+                state = self.player_states.get(user)
+                if state and 'prev' in state and 'curr' in state:
+                    pos0 = state['prev']['pos']
+                    pos1 = state['curr']['pos']
+                    dt = 1/20  # 서버 업데이트 주기
+                    elapsed = time.time() - state['last_update_time']
+                    t = min(max(elapsed / dt, 0), 1)
+                    interp_pos = lerp_pos(pos0, pos1, t)
+                else:
+                    interp_pos = p['pos']
+                pygame.draw.circle(screen, p['color'], (int(interp_pos[0]), int(interp_pos[1])), 12)
+                name_surf = get_font(14).render(user, True, p['color'])
+                screen.blit(name_surf, (interp_pos[0]-name_surf.get_width()//2, interp_pos[1]-24))
+                if p['ready']:
+                    ready_surf = get_font(12).render("READY", True, (0, 200, 0))
+                    screen.blit(ready_surf, (interp_pos[0]-ready_surf.get_width()//2, interp_pos[1]+20))
+            
+            # 연습 총알
+            self.bullet_pool.render(screen)
+            
+            # 채팅/패널
+            self.lobby_panel.render(screen)
+            self.chat_box.render(screen)
+            
+            # 카운트다운 애니메이션
+            if self.countdown_value:
+                base_size = 120 if self.countdown_value != "START" else 80
+                grow = 1.2 - 0.4 * (1.0 - self.countdown_timer)
+                alpha = int(255 * min(1.0, self.countdown_timer + 0.2))
+                font = get_font(int(base_size * grow))
+                text = self.countdown_value
+                text_surf = font.render(text, True, (255, 80, 80))
+                text_surf.set_alpha(alpha)
+                rect = text_surf.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2))
+                screen.blit(text_surf, rect)
 
     def on_enter(self):
         logging.debug("Entering Lobby Scene")

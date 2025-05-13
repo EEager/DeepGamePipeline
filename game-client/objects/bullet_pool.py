@@ -150,7 +150,7 @@ class BulletPool:
         
         # 활성화된 총알의 인덱스 가져오기
         active_indices = np.where(self.active)[0]
-        print(f"active_indice len: {len(active_indices)}")
+        # print(f"active_indice len: {len(active_indices)}")
         
         # 각 총알에 대해 보간 계산
         for idx in active_indices:

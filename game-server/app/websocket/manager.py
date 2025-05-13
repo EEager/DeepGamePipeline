@@ -7,8 +7,7 @@ import logging
 import numpy as np
 from dataclasses import dataclass
 from typing import List, Dict, Optional
-
-#from app.services.game_loop import GameWorld, GameLoop
+from app.services.bullet_pool import BulletPool
 
 # 로깅 설정
 logging.basicConfig(level=logging.DEBUG)
@@ -119,22 +118,7 @@ class BulletPool:
         """
         pass
 
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: set = set()
-
-    async def connect(self, websocket):
-        await websocket.accept()
-        self.active_connections.add(websocket)
-
-    def disconnect(self, websocket):
-        self.active_connections.discard(websocket)
-
-    async def broadcast_json(self, message):
-        for conn in self.active_connections:
-            await conn.send_json(message)
-
-class PlayerState:
+class LobbyPlayerState:
     def __init__(self, user, color):
         self.user = user
         self.x = 200 + random.randint(0, 200)
@@ -145,7 +129,7 @@ class PlayerState:
 class LobbyManager:
 
     def __init__(self):
-        self.players = {}  # websocket: PlayerState
+        self.players = {}  # websocket: LobbyPlayerState
         self.user_map = {}  # user: websocket
         self.countdown_task = None
         self.user_colors = {}  # user: color
@@ -185,7 +169,7 @@ class LobbyManager:
                 break
                 
         nickname = f"user_{random.randint(1, 1000)}"
-        self.players[websocket] = PlayerState(nickname, color)
+        self.players[websocket] = LobbyPlayerState(nickname, color)
         self.user_map[user] = websocket
         
          # 방금 접속한 유저 nick, color를 준다
@@ -298,87 +282,3 @@ class LobbyManager:
             await asyncio.sleep(1)
         await self.broadcast({"type": "start"})
         self.countdown_task = None
-
-# # --- 멀티게임용 싱글톤 월드/루프/입력큐 ---
-# game_world = GameWorld()
-# input_queue = []  # [(user, input_dict)]
-
-# async def broadcast_state(world, game_state=None):
-#     # 상태 메시지
-#     msg = {
-#         "type": "state",
-#         "tick": world.tick,
-#         "players": [
-#             {
-#                 "id": user,
-#                 "nickname": player.get('nickname', user),
-#                 "x": player['x'],
-#                 "y": player['y'],
-#                 "health": player.get('health', 100),
-#                 "max_health": player.get('max_health', 100),
-#                 "color": player.get('color', (0,0,255))
-#             }
-#             for user, player in world.players.items()
-#         ],
-#         "bullets": [
-#             {
-#                 "id": bullet['id'],
-#                 "x": bullet['x'],
-#                 "y": bullet['y'],
-#                 "vx": bullet['vx'],
-#                 "vy": bullet['vy'],
-#                 "owner": bullet['owner'],
-#                 "color": bullet['color']
-#             }
-#             for bullet in world.bullets.values()
-#         ],
-#         "boss": world.boss,
-#         "items": [
-#             {
-#                 "id": item['id'],
-#                 "x": item['x'],
-#                 "y": item['y'],
-#                 "type": item['type']
-#             }
-#             for item in world.items.values()
-#         ]
-#     }
-    
-#     # 게임 상태 메시지 전송
-#     for ws in list(world.players.keys()):
-#         try:
-#             await ws.send_json(msg)
-#         except Exception:
-#             pass
-    
-#     # 게임 오버/클리어 메시지 전송
-#     if game_state:
-#         game_msg = {"type": game_state}
-#         for ws in list(world.players.keys()):
-#             try:
-#                 await ws.send_json(game_msg)
-#             except Exception:
-#                 pass
-
-# # 게임 루프 인스턴스
-# multi_game_loop = GameLoop(game_world, broadcast_state)
-
-# def queue_input(user, input_dict):
-#     input_queue.append((user, input_dict))
-
-# # 입력 큐를 world에 반영하는 함수(예시)
-# def process_inputs():
-#     while input_queue:
-#         user, inp = input_queue.pop(0)
-#         # 예: 이동 입력 반영
-#         if user in game_world.players:
-#             p = game_world.players[user]
-#             p['x'] += inp.get('dx', 0)
-#             p['y'] += inp.get('dy', 0)
-#             # 총알 발사 입력 처리
-#             if inp.get('shoot'):
-#                 # 예시: 플레이어 앞 방향으로 총알 생성
-#                 vx, vy = inp.get('vx', 0), inp.get('vy', -6)
-#                 color = p.get('color', (255,255,0))
-#                 game_world.spawn_bullet(user, p['x'], p['y'], vx, vy, color)
-#         # 기타 입력 처리

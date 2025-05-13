@@ -18,4 +18,5 @@ django
 websocket
 websocket-client
 pygame_textinput
+sankeviz
 
