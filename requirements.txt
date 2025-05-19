@@ -18,5 +18,7 @@ django
 websocket
 websocket-client
 pygame_textinput
-sankeviz
+snakeviz
 
+# windserf ??? 
+# 

@@ -1,6 +1,6 @@
 import pygame
 from scenes.base_scene import BaseScene
-from config.settings import SCREEN_WIDTH, SCREEN_HEIGHT
+from config.settings import SCREEN_WIDTH, SCREEN_HEIGHT, PLAYER_SPEED
 import json
 import queue
 from utils.font import get_font
@@ -9,8 +9,9 @@ import logging
 import time
 
 class MultiGameScene(BaseScene):
-    def __init__(self, ws, user, color):
+    def __init__(self, ws, ws_thread, user, color):
         self.ws = ws  # WebSocketApp 인스턴스
+        self.ws_thread = ws_thread  # 웹소켓 스레드
         self.user = user
         self.color = color
         self.players = {}
@@ -42,10 +43,15 @@ class MultiGameScene(BaseScene):
         self.ws.on_message = self.on_message
         # 채팅박스 등 추가 가능
         # self.chat_box = ...
+        
+        self.server_is_ready = False
 
     def on_message(self, ws, message):
         data = json.loads(message)
-        if data.get('type') == 'state':
+        
+        if data.get('type') == 'start_multigame':
+            self.server_is_ready = True
+        elif data.get('type') == 'state':
             self.state_queue.put(data)
         elif data.get('type') == 'system':
             self.system_queue.put(data['msg'])
@@ -54,17 +60,7 @@ class MultiGameScene(BaseScene):
         elif data.get('type') == 'game_clear':
             self.game_clear = True
 
-    def handle_event(self, event: pygame.event.Event) -> None:
-        if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
-            keys = pygame.key.get_pressed()
-            dx = dy = 0
-            if keys[pygame.K_a]: dx -= 1
-            if keys[pygame.K_d]: dx += 1
-            if keys[pygame.K_w]: dy -= 1
-            if keys[pygame.K_s]: dy += 1
-            msg = {"type": "input", "user": self.user, "input": {"dx": dx, "dy": dy}}
-            self.ws.send(json.dumps(msg))
-        
+    def handle_event(self, event: pygame.event.Event) -> None:        
         # 마우스 클릭으로 총알 발사
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if not self.game_over and not self.game_clear:
@@ -86,50 +82,65 @@ class MultiGameScene(BaseScene):
                     }
                     self.ws.send(json.dumps(msg))
 
-    def update(self):
-        """게임 상태 업데이트"""
-        # 플레이어 이동 처리
+    def update(self, delta_time: float) -> None:
+        if self.server_is_ready == False:
+            return
+        
+        
+         # 플레이어 이동
         keys = pygame.key.get_pressed()
-        dx = (keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]) * 5
-        dy = (keys[pygame.K_DOWN] - keys[pygame.K_UP]) * 5
-        
-        if dx != 0 or dy != 0:
-            self.ws.send_json({
-                "type": "input",
-                "input": {
-                    "dx": dx,
-                    "dy": dy
-                }
-            })
-        
-        # 총알 발사 처리
-        if pygame.mouse.get_pressed()[0]:  # 좌클릭
-            mouse_x, mouse_y = pygame.mouse.get_pos()
-            dx = mouse_x - self.x
-            dy = mouse_y - self.y
-            length = (dx ** 2 + dy ** 2) ** 0.5
-            if length > 0:
-                vx = (dx / length) * 10
-                vy = (dy / length) * 10
-                self.ws.send_json({
-                    "type": "shoot",
-                    "x": self.x,
-                    "y": self.y,
-                    "vx": vx,
-                    "vy": vy,
-                    "color": self.color
-                })
-        
-        # 총알 이동 업데이트
-        current_time = time.time()
-        for bullet_id, bullet in list(self.bullets.items()):
-            dt = current_time - bullet['last_update']
-            bullet['x'] += bullet['vx'] * dt
-            bullet['y'] += bullet['vy'] * dt
-            bullet['last_update'] = current_time
+        if keys:
+            me = self.practice_players[self.nickname]
+            dx = dy = 0
+            # logging.debug(f"[lobby_scene] 연습 플레이어 이동 - {self.nickname}: {keys[pygame.K_a]}, {keys[pygame.K_d]}, {keys[pygame.K_w]}, {keys[pygame.K_s]}")
+            # 키 입력 처리 개선
+            if keys[pygame.K_a]: dx -= 1
+            if keys[pygame.K_d]: dx += 1
+            if keys[pygame.K_w]: dy -= 1
+            if keys[pygame.K_s]: dy += 1
+            
+            if dx != 0 or dy != 0:
+                # 방향 벡터 정규화
+                length = (dx*dx + dy*dy) ** 0.5
+                dx /= length
+                dy /= length
+                
+                # 정규화된 방향에 스피드 적용
+                new_x = me['pos'][0] + dx * PLAYER_SPEED * delta_time
+                new_y = me['pos'][1] + dy * PLAYER_SPEED * delta_time
+                
+                # 연습 공간 내에서만 이동
+                new_x = max(self.practice_rect.x+10, min(self.practice_rect.x+self.practice_rect.w-10, new_x))
+                new_y = max(self.practice_rect.y+10, min(self.practice_rect.y+self.practice_rect.h-10, new_y))
+                
+                # logging.debug(f"[lobby_scene] 연습 플레이어 이동 - {self.nickname}: {new_x}, {new_y}")
+                if self.ws:
+                    self.ws.send(json.dumps({
+                        "type": "lobby_move",
+                        "user": self.nickname,
+                        "x": new_x,
+                        "y": new_y
+                    }))
+
+        # 웹소켓 메시지 처리
+        try:
+            while not self.state_queue.empty():
+                message = self.state_queue.get_nowait()
+                self.handle_websocket_message(message)
+        except queue.Empty:
+            pass
+
+        try:
+            while not self.system_queue.empty():
+                message = self.system_queue.get_nowait()
+                logging.info(f"[MultiGame] System message: {message}")
+        except queue.Empty:
+            pass
 
     def render(self, screen: pygame.Surface, fps: int = 0) -> None:
         screen.fill((255, 255, 255))
+        if self.server_is_ready == False:
+            return
         
         # FPS 표시
         fps_text = self.small_font.render(f"FPS: {fps}", True, (0, 0, 0))
@@ -210,6 +221,7 @@ class MultiGameScene(BaseScene):
         pygame.mouse.set_visible(False)
 
     def on_exit(self):
+        """씬 종료 시 정리"""
         logging.debug("Exiting Multi Game Scene")
         pygame.mouse.set_visible(True)
         self.running = False 
@@ -299,6 +311,7 @@ class MultiGameScene(BaseScene):
         
         # 서버에 게임 시작 메시지 전송
         self.ws.send_json({
-            "type": "start_multigame",
+            "type": "multigame_ready",
+            "user": self.user,
             "color": self.color
         }) 

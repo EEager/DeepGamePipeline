@@ -1,10 +1,12 @@
 import numpy as np
 import time
 import logging
+from dataclasses import dataclass
 from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+@dataclass
 class BulletPool:
     MAX_BULLETS = 1000
     POSITION_SIZE = 2  # x, y
@@ -86,4 +88,23 @@ class BulletPool:
                 'owner': int(self.owners[i])
             }
             for i in np.where(active_mask)[0]
-        ] 
+        ]
+
+    def deactivate(self, bullet_id: int) -> None:
+        """
+        특정 총알을 비활성화합니다.
+        TODO: 구현 필요
+        - bullet_id가 유효한지 확인
+        - 해당 총알의 active 상태를 False로 변경
+        - 필요한 경우 추가 정리 작업 수행
+        """
+        pass
+
+    def clear(self) -> None:
+        """
+        모든 총알을 비활성화합니다.
+        TODO: 구현 필요
+        - 모든 총알의 active 상태를 False로 변경
+        - 필요한 경우 추가 정리 작업 수행
+        """
+        pass
